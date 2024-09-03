@@ -10,7 +10,6 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-// Config represents the SSH and command configurations
 type Config struct {
 	SSH struct {
 		User     string `yaml:"user"`
@@ -24,7 +23,6 @@ type Hosts struct {
 	Hosts []string `yaml:"hosts"`
 }
 
-// LoadConfig loads SSH and command configurations from a YAML file
 func LoadConfig(path string) (*Config, error) {
 	cfg := &Config{}
 	data, err := ioutil.ReadFile(path)
@@ -37,7 +35,6 @@ func LoadConfig(path string) (*Config, error) {
 	return cfg, nil
 }
 
-// LoadHosts loads the list of hosts from a YAML file
 func LoadHosts(path string) (*Hosts, error) {
 	hosts := &Hosts{}
 	data, err := ioutil.ReadFile(path)
@@ -50,7 +47,6 @@ func LoadHosts(path string) (*Hosts, error) {
 	return hosts, nil
 }
 
-// Exported function with capitalized name
 func GetSSHClient(user, password string) (*ssh.ClientConfig, error) {
 	config := &ssh.ClientConfig{
 		User: user,
@@ -64,7 +60,6 @@ func GetSSHClient(user, password string) (*ssh.ClientConfig, error) {
 	return config, nil
 }
 
-// ExecuteCommands connects to a host and executes the provided commands
 func ExecuteCommands(host string, config *ssh.ClientConfig, commands []string) error {
 	conn, err := ssh.Dial("tcp", fmt.Sprintf("%s:22", host), config)
 	if err != nil {

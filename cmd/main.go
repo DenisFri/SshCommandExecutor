@@ -18,7 +18,7 @@ func main() {
 		log.Fatalf("Error loading hosts: %v", err)
 	}
 
-	sshConfig, err := sshclient.GetSSHClient(config.SSH.User, config.SSH.Password) // Correct function name
+	sshConfig, err := sshclient.GetSSHClient(config.SSH.User, config.SSH.Password)
 	if err != nil {
 		log.Fatalf("Error configuring SSH client: %v", err)
 	}
