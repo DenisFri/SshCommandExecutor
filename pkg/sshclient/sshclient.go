@@ -75,22 +75,21 @@ func ExecuteCommands(host string, config *ssh.ClientConfig, commands []string) e
 	for _, cmd := range commands {
 		session, err := conn.NewSession()
 		if err != nil {
-			return fmt.Errorf("failed to create session: %v", err)
+			log.Printf("Failed to create session for %s: %v", host, err)
+			continue
 		}
-		defer func(session *ssh.Session) {
-			err := session.Close()
-			if err != nil {
-				log.Printf("Failed to close session on %s: %v", host, err)
-			}
-		}(session)
 
 		output, err := session.CombinedOutput(cmd)
 		if err != nil {
 			log.Printf("Failed to execute command '%s' on %s: %v", cmd, host, err)
-			continue
+		} else {
+			log.Printf("Output from %s:\n%s", host, output)
 		}
 
-		log.Printf("Output from %s:\n%s", host, output)
+		// Handle the error from session.Close()
+		if err := session.Close(); err != nil {
+			log.Printf("Failed to close session for %s: %v", host, err)
+		}
 	}
 
 	return nil
