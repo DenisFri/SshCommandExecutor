@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
+	"gopkg.in/yaml.v2"
 )
 
 // Config represents the SSH and command configurations
@@ -49,8 +50,8 @@ func LoadHosts(path string) (*Hosts, error) {
 	return hosts, nil
 }
 
-// getSSHClient returns an SSH client configured with the provided settings
-func getSSHClient(user, password string) (*ssh.ClientConfig, error) {
+// Exported function with capitalized name
+func GetSSHClient(user, password string) (*ssh.ClientConfig, error) {
 	config := &ssh.ClientConfig{
 		User: user,
 		Auth: []ssh.AuthMethod{

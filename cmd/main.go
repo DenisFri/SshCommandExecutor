@@ -4,7 +4,7 @@ import (
 	"log"
 	"sync"
 
-	"github.com/yourusername/ssh-command-executor/pkg/sshclient"
+	"github.com/DenisFri/SshCommandExecutor/pkg/sshclient"
 )
 
 func main() {
@@ -18,7 +18,7 @@ func main() {
 		log.Fatalf("Error loading hosts: %v", err)
 	}
 
-	sshConfig, err := sshclient.getSSHClient(config.SSH.User, config.SSH.Password)
+	sshConfig, err := sshclient.GetSSHClient(config.SSH.User, config.SSH.Password) // Correct function name
 	if err != nil {
 		log.Fatalf("Error configuring SSH client: %v", err)
 	}

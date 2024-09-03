@@ -1,0 +1,15 @@
+# Output of the `go build` command
+.bin/
+
+# Dependency directories (only if not vendoring)
+vendor/
+
+# Go module files
+go.sum
+
+# IDE/editor specific files
+.idea/
+*.iml
+
+# Log files
+*.log
