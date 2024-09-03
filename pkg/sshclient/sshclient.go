@@ -2,8 +2,8 @@ package sshclient
 
 import (
 	"fmt"
-	"io/ioutil"
 	"log"
+	"os"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -25,7 +25,7 @@ type Hosts struct {
 
 func LoadConfig(path string) (*Config, error) {
 	cfg := &Config{}
-	data, err := ioutil.ReadFile(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %v", err)
 	}
@@ -37,7 +37,7 @@ func LoadConfig(path string) (*Config, error) {
 
 func LoadHosts(path string) (*Hosts, error) {
 	hosts := &Hosts{}
-	data, err := ioutil.ReadFile(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read hosts file: %v", err)
 	}
@@ -65,14 +65,24 @@ func ExecuteCommands(host string, config *ssh.ClientConfig, commands []string) e
 	if err != nil {
 		return fmt.Errorf("failed to dial %s: %v", host, err)
 	}
-	defer conn.Close()
+	defer func(conn *ssh.Client) {
+		err := conn.Close()
+		if err != nil {
+			log.Printf("Failed to close connection to %s: %v", host, err)
+		}
+	}(conn)
 
 	for _, cmd := range commands {
 		session, err := conn.NewSession()
 		if err != nil {
 			return fmt.Errorf("failed to create session: %v", err)
 		}
-		defer session.Close()
+		defer func(session *ssh.Session) {
+			err := session.Close()
+			if err != nil {
+				log.Printf("Failed to close session on %s: %v", host, err)
+			}
+		}(session)
 
 		output, err := session.CombinedOutput(cmd)
 		if err != nil {
