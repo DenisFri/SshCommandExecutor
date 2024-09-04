@@ -1,6 +1,3 @@
-ssh:
-  user: your_username
-  password: your_password
 commands:
   - uname -a
   - whoami

@@ -8,21 +8,25 @@ import (
 )
 
 func main() {
+	// Load configuration and commands from config.yaml
 	config, err := sshclient.LoadConfig("config/config.yaml")
 	if err != nil {
 		log.Fatalf("Error loading config: %v", err)
 	}
 
+	// Load the list of hosts from hosts.yaml
 	hosts, err := sshclient.LoadHosts("hosts/hosts.yaml")
 	if err != nil {
 		log.Fatalf("Error loading hosts: %v", err)
 	}
 
-	sshConfig, err := sshclient.GetSSHClient(config.SSH.User, config.SSH.Password)
+	// Retrieve the SSH client configuration (decrypted credentials are handled internally)
+	sshConfig, err := sshclient.GetSSHClient()
 	if err != nil {
 		log.Fatalf("Error configuring SSH client: %v", err)
 	}
 
+	// Execute the commands concurrently across the hosts
 	var wg sync.WaitGroup
 	for _, host := range hosts.Hosts {
 		wg.Add(1)

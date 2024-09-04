@@ -10,11 +10,8 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+// Config represents the YAML configuration
 type Config struct {
-	SSH struct {
-		User     string `yaml:"user"`
-		Password string `yaml:"password"`
-	} `yaml:"ssh"`
 	Commands []string `yaml:"commands"`
 }
 
@@ -23,6 +20,7 @@ type Hosts struct {
 	Hosts []string `yaml:"hosts"`
 }
 
+// LoadConfig loads the command configuration from a YAML file
 func LoadConfig(path string) (*Config, error) {
 	cfg := &Config{}
 	data, err := os.ReadFile(path)
@@ -35,6 +33,7 @@ func LoadConfig(path string) (*Config, error) {
 	return cfg, nil
 }
 
+// LoadHosts loads the list of hosts from a YAML file
 func LoadHosts(path string) (*Hosts, error) {
 	hosts := &Hosts{}
 	data, err := os.ReadFile(path)
@@ -47,7 +46,29 @@ func LoadHosts(path string) (*Hosts, error) {
 	return hosts, nil
 }
 
-func GetSSHClient(user, password string) (*ssh.ClientConfig, error) {
+// GetSSHClient retrieves the SSH client configuration using decrypted credentials
+func GetSSHClient() (*ssh.ClientConfig, error) {
+	// Get the decryption password from the environment
+	decryptionPassword := os.Getenv("CREDENTIALS_PASSWORD")
+	if decryptionPassword == "" {
+		return nil, fmt.Errorf("CREDENTIALS_PASSWORD environment variable not set")
+	}
+
+	// Decrypt the credentials using the function from credentials.go
+	creds, err := DecryptCredentials(decryptionPassword, "config/credentials.enc")
+	if err != nil {
+		return nil, fmt.Errorf("error decrypting credentials: %v", err)
+	}
+
+	// Retrieve the SSH user and password from the decrypted credentials
+	user := creds["SSH_USER"]
+	password := creds["SSH_PASSWORD"]
+
+	if user == "" || password == "" {
+		return nil, fmt.Errorf("SSH_USER or SSH_PASSWORD not found in decrypted credentials")
+	}
+
+	// Create and return the SSH client configuration
 	config := &ssh.ClientConfig{
 		User: user,
 		Auth: []ssh.AuthMethod{
@@ -60,6 +81,7 @@ func GetSSHClient(user, password string) (*ssh.ClientConfig, error) {
 	return config, nil
 }
 
+// ExecuteCommands connects to a host and executes the provided commands
 func ExecuteCommands(host string, config *ssh.ClientConfig, commands []string) error {
 	conn, err := ssh.Dial("tcp", fmt.Sprintf("%s:22", host), config)
 	if err != nil {
@@ -86,7 +108,6 @@ func ExecuteCommands(host string, config *ssh.ClientConfig, commands []string) e
 			log.Printf("Output from %s:\n%s", host, output)
 		}
 
-		// Handle the error from session.Close()
 		if err := session.Close(); err != nil {
 			log.Printf("Failed to close session for %s: %v", host, err)
 		}
