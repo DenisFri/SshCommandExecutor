@@ -61,11 +61,11 @@ func GetSSHClient() (*ssh.ClientConfig, error) {
 	}
 
 	// Retrieve the SSH user and password from the decrypted credentials
-	user := creds["SSH_USER"]
-	password := creds["SSH_PASSWORD"]
+	user := creds["SSH_EXECUTOR_USER"]
+	password := creds["SSH_EXECUTOR_PASSWORD"]
 
 	if user == "" || password == "" {
-		return nil, fmt.Errorf("SSH_USER or SSH_PASSWORD not found in decrypted credentials")
+		return nil, fmt.Errorf("SSH_EXECUTOR_USER or SSH_EXECUTOR_PASSWORD not found in decrypted credentials")
 	}
 
 	// Create and return the SSH client configuration
