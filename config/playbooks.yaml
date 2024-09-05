@@ -1,0 +1,13 @@
+playbooks:
+  - name: "basic_info"
+    commands:
+      - "uname -a"
+      - "df -h"
+  - name: "user_info"
+    commands:
+      - "whoami"
+      - "uptime"
+  - name: "file_info"
+    commands:
+      - "ls -l"
+      - "cat /etc/os-release"
