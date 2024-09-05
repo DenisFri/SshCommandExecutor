@@ -5,26 +5,6 @@ import (
 	"testing"
 )
 
-// TestLoadConfig tests the LoadConfig function
-func TestLoadConfig(t *testing.T) {
-	config, err := LoadConfig("../../config/config.yaml")
-	if err != nil {
-		t.Fatalf("Expected no error, got %v", err)
-	}
-
-	if config.SSH.User == "" {
-		t.Errorf("Expected SSH user to be set, got an empty string")
-	}
-
-	if config.SSH.Password == "" {
-		t.Errorf("Expected SSH password to be set, got an empty string")
-	}
-
-	if len(config.Commands) == 0 {
-		t.Errorf("Expected at least one command, got none")
-	}
-}
-
 // TestLoadHosts tests the LoadHosts function
 func TestLoadHosts(t *testing.T) {
 	hosts, err := LoadHosts("../../hosts/hosts.yaml")

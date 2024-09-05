@@ -9,14 +9,14 @@ import (
 )
 
 func main() {
-	// Load configuration and commands from config.yaml
-	config, err := sshclient.LoadConfig("config/config.yaml")
+	// Load playbooks from playbooks.yaml
+	playbookConfig, err := sshclient.LoadPlaybooks("config/playbooks.yaml")
 	if err != nil {
-		log.Fatalf("Error loading config: %v", err)
+		log.Fatalf("Error loading playbooks: %v", err)
 	}
 
-	// Load the list of hosts from hosts.yaml
-	hosts, err := sshclient.LoadHosts("hosts/hosts.yaml")
+	// Load hosts from hosts.yaml
+	hostsConfig, err := sshclient.LoadHosts("config/hosts.yaml")
 	if err != nil {
 		log.Fatalf("Error loading hosts: %v", err)
 	}
@@ -27,20 +27,28 @@ func main() {
 		log.Fatalf("Error configuring SSH client: %v", err)
 	}
 
-	// Execute the commands concurrently across the hosts with a delay
+	// Execute the commands for each host, based on the assigned playbook
 	var wg sync.WaitGroup
-	for _, host := range hosts.Hosts {
+	for _, host := range hostsConfig.Hosts {
 		wg.Add(1)
-		go func(h string) {
+		go func(h sshclient.HostConfig) {
 			defer wg.Done()
 
-			time.Sleep(1000 * time.Millisecond)
+			// Find the playbook assigned to this host
+			playbook, err := sshclient.FindPlaybook(playbookConfig, h.Playbook)
+			if err != nil {
+				log.Printf("Error finding playbook for host %s: %v", h.Hostname, err)
+				return
+			}
 
-			log.Printf("Connecting to %s...", h)
-			if err := sshclient.ExecuteCommands(h, sshConfig, config.Commands); err != nil {
-				log.Printf("Error executing commands on %s: %v", h, err)
+			// Introduce a delay between command executions for each host (optional)
+			time.Sleep(500 * time.Millisecond)
+
+			log.Printf("Connecting to %s with playbook %s...", h.Hostname, h.Playbook)
+			if err := sshclient.ExecuteCommands(h.Hostname, sshConfig, playbook.Commands); err != nil {
+				log.Printf("Error executing commands on %s: %v", h.Hostname, err)
 			} else {
-				log.Printf("Successfully executed commands on %s", h)
+				log.Printf("Successfully executed commands on %s", h.Hostname)
 			}
 		}(host)
 	}

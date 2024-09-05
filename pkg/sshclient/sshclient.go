@@ -10,40 +10,62 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-// Config represents the YAML configuration
-type Config struct {
+// Playbook defines a collection of reusable command sequences
+type Playbook struct {
+	Name     string   `yaml:"name"`
 	Commands []string `yaml:"commands"`
 }
 
-// Hosts represents the list of target hosts
-type Hosts struct {
-	Hosts []string `yaml:"hosts"`
+// PlaybookConfig represents the playbook configuration from the YAML file
+type PlaybookConfig struct {
+	Playbooks []Playbook `yaml:"playbooks"`
 }
 
-// LoadConfig loads the command configuration from a YAML file
-func LoadConfig(path string) (*Config, error) {
-	cfg := &Config{}
+// HostConfig represents the host configuration with an assigned playbook
+type HostConfig struct {
+	Hostname string `yaml:"hostname"`
+	Playbook string `yaml:"playbook"`
+}
+
+// HostsConfig represents the host assignments in the YAML file
+type HostsConfig struct {
+	Hosts []HostConfig `yaml:"hosts"`
+}
+
+// LoadPlaybooks loads the playbook definitions from a YAML file
+func LoadPlaybooks(path string) (*PlaybookConfig, error) {
+	playbookConfig := &PlaybookConfig{}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read config file: %v", err)
+		return nil, fmt.Errorf("failed to read playbook file: %v", err)
 	}
-	if err := yaml.Unmarshal(data, cfg); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal config data: %v", err)
+	if err := yaml.Unmarshal(data, playbookConfig); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal playbook data: %v", err)
 	}
-	return cfg, nil
+	return playbookConfig, nil
 }
 
-// LoadHosts loads the list of hosts from a YAML file
-func LoadHosts(path string) (*Hosts, error) {
-	hosts := &Hosts{}
+// LoadHosts loads the host configuration from a YAML file
+func LoadHosts(path string) (*HostsConfig, error) {
+	hostsConfig := &HostsConfig{}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read hosts file: %v", err)
 	}
-	if err := yaml.Unmarshal(data, hosts); err != nil {
+	if err := yaml.Unmarshal(data, hostsConfig); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal hosts data: %v", err)
 	}
-	return hosts, nil
+	return hostsConfig, nil
+}
+
+// FindPlaybook finds the playbook by name from the playbook configuration
+func FindPlaybook(playbookConfig *PlaybookConfig, playbookName string) (*Playbook, error) {
+	for _, playbook := range playbookConfig.Playbooks {
+		if playbook.Name == playbookName {
+			return &playbook, nil
+		}
+	}
+	return nil, fmt.Errorf("playbook %s not found", playbookName)
 }
 
 // GetSSHClient retrieves the SSH client configuration using decrypted credentials

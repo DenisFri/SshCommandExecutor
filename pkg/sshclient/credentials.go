@@ -1,34 +1,54 @@
 package sshclient
 
 import (
-	"bufio"
-	"bytes"
+	"crypto/aes"
+	"crypto/cipher"
+	"encoding/hex"
 	"fmt"
-	"os/exec"
+	"os"
 	"strings"
 )
 
-// DecryptCredentials decrypts an encrypted file using OpenSSL
+// DecryptCredentials decrypts the encrypted credentials using AES-256 in Go
 func DecryptCredentials(password, filePath string) (map[string]string, error) {
-	cmd := exec.Command("openssl", "enc", "-aes-256-cbc", "-d", "-in", filePath, "-k", password)
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	err := cmd.Run()
+	key := []byte(password) // The password used for encryption (must be 32 bytes)
+	data, err := os.ReadFile(filePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decrypt credentials: %v", err)
+		return nil, fmt.Errorf("failed to read encrypted credentials file: %v", err)
 	}
 
-	return parseCredentials(out.String())
+	// Decode the hex-encoded ciphertext
+	ciphertext, err := hex.DecodeString(string(data))
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode ciphertext: %v", err)
+	}
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create cipher block: %v", err)
+	}
+
+	if len(ciphertext) < aes.BlockSize {
+		return nil, fmt.Errorf("ciphertext too short")
+	}
+	iv := ciphertext[:aes.BlockSize]
+	ciphertext = ciphertext[aes.BlockSize:]
+
+	stream := cipher.NewCFBDecrypter(block, iv)
+	stream.XORKeyStream(ciphertext, ciphertext)
+
+	// Convert the decrypted data into a string (assuming it's key=value pairs)
+	plaintext := string(ciphertext)
+	return parseCredentials(plaintext)
 }
 
 // parseCredentials parses the decrypted credentials into a map
 func parseCredentials(content string) (map[string]string, error) {
-	scanner := bufio.NewScanner(strings.NewReader(content))
+	lines := strings.Split(content, "\n")
 	creds := make(map[string]string)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue // Skip empty lines and comments
+	for _, line := range lines {
+		if len(line) == 0 || strings.HasPrefix(line, "#") {
+			continue
 		}
 		parts := strings.SplitN(line, "=", 2)
 		if len(parts) != 2 {
@@ -36,10 +56,5 @@ func parseCredentials(content string) (map[string]string, error) {
 		}
 		creds[parts[0]] = parts[1]
 	}
-
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error reading credentials: %v", err)
-	}
-
 	return creds, nil
 }
