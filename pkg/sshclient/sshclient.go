@@ -10,29 +10,24 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-// Playbook defines a collection of reusable command sequences
 type Playbook struct {
 	Name     string   `yaml:"name"`
 	Commands []string `yaml:"commands"`
 }
 
-// PlaybookConfig represents the playbook configuration from the YAML file
 type PlaybookConfig struct {
 	Playbooks []Playbook `yaml:"playbooks"`
 }
 
-// HostConfig represents the host configuration with an assigned playbook
 type HostConfig struct {
 	Hostname string `yaml:"hostname"`
 	Playbook string `yaml:"playbook"`
 }
 
-// HostsConfig represents the host assignments in the YAML file
 type HostsConfig struct {
 	Hosts []HostConfig `yaml:"hosts"`
 }
 
-// LoadPlaybooks loads the playbook definitions from a YAML file
 func LoadPlaybooks(path string) (*PlaybookConfig, error) {
 	playbookConfig := &PlaybookConfig{}
 	data, err := os.ReadFile(path)
@@ -45,7 +40,6 @@ func LoadPlaybooks(path string) (*PlaybookConfig, error) {
 	return playbookConfig, nil
 }
 
-// LoadHosts loads the host configuration from a YAML file
 func LoadHosts(path string) (*HostsConfig, error) {
 	hostsConfig := &HostsConfig{}
 	data, err := os.ReadFile(path)
@@ -58,7 +52,6 @@ func LoadHosts(path string) (*HostsConfig, error) {
 	return hostsConfig, nil
 }
 
-// FindPlaybook finds the playbook by name from the playbook configuration
 func FindPlaybook(playbookConfig *PlaybookConfig, playbookName string) (*Playbook, error) {
 	for _, playbook := range playbookConfig.Playbooks {
 		if playbook.Name == playbookName {
@@ -68,21 +61,17 @@ func FindPlaybook(playbookConfig *PlaybookConfig, playbookName string) (*Playboo
 	return nil, fmt.Errorf("playbook %s not found", playbookName)
 }
 
-// GetSSHClient retrieves the SSH client configuration using decrypted credentials
 func GetSSHClient() (*ssh.ClientConfig, error) {
-	// Get the decryption password from the environment
 	decryptionPassword := os.Getenv("CREDENTIALS_PASSWORD")
 	if decryptionPassword == "" {
 		return nil, fmt.Errorf("CREDENTIALS_PASSWORD environment variable not set")
 	}
 
-	// Decrypt the credentials using the function from credentials.go
 	creds, err := DecryptCredentials(decryptionPassword, "config/credentials.enc")
 	if err != nil {
 		return nil, fmt.Errorf("error decrypting credentials: %v", err)
 	}
 
-	// Retrieve the SSH user and password from the decrypted credentials
 	user := creds["SSH_EXECUTOR_USER"]
 	password := creds["SSH_EXECUTOR_PASSWORD"]
 
@@ -96,14 +85,13 @@ func GetSSHClient() (*ssh.ClientConfig, error) {
 		Auth: []ssh.AuthMethod{
 			ssh.Password(password),
 		},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // Consider using a proper host key callback
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		Timeout:         5 * time.Second,
 	}
 
 	return config, nil
 }
 
-// ExecuteCommands connects to a host and executes the provided commands
 func ExecuteCommands(host string, config *ssh.ClientConfig, commands []string) error {
 	conn, err := ssh.Dial("tcp", fmt.Sprintf("%s:22", host), config)
 	if err != nil {

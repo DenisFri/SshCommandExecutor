@@ -9,32 +9,27 @@ import (
 )
 
 func main() {
-	// Load playbooks from playbooks.yaml
 	playbookConfig, err := sshclient.LoadPlaybooks("config/playbooks.yaml")
 	if err != nil {
 		log.Fatalf("Error loading playbooks: %v", err)
 	}
 
-	// Load hosts from hosts.yaml
 	hostsConfig, err := sshclient.LoadHosts("config/hosts.yaml")
 	if err != nil {
 		log.Fatalf("Error loading hosts: %v", err)
 	}
 
-	// Retrieve the SSH client configuration
 	sshConfig, err := sshclient.GetSSHClient()
 	if err != nil {
 		log.Fatalf("Error configuring SSH client: %v", err)
 	}
 
-	// Execute the commands for each host, based on the assigned playbook
 	var wg sync.WaitGroup
 	for _, host := range hostsConfig.Hosts {
 		wg.Add(1)
 		go func(h sshclient.HostConfig) {
 			defer wg.Done()
 
-			// Find the playbook assigned to this host
 			playbook, err := sshclient.FindPlaybook(playbookConfig, h.Playbook)
 			if err != nil {
 				log.Printf("Error finding playbook for host %s: %v", h.Hostname, err)
