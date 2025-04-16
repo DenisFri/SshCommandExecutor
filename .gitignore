@@ -1,5 +1,5 @@
 # Output of the `go build` command
-.bin/
+bin/
 
 # Dependency directories (only if not vendoring)
 vendor/
