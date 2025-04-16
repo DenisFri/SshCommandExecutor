@@ -82,7 +82,6 @@ func main() {
 			defer wg.Done()
 			defer func() { <-sem }() // Release semaphore when done
 
-			// Find the playbook assigned to this host
 			playbook, err := sshclient.FindPlaybook(playbookConfig, h.Playbook)
 			if err != nil {
 				log.Printf("Error finding playbook for host %s: %v", h.Hostname, err)
