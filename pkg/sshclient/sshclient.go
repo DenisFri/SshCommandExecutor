@@ -5,16 +5,25 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
 	"gopkg.in/yaml.v2"
 )
+
+// ProgressTracker tracks execution progress using atomic counters
+type ProgressTracker struct {
+	CompletedCommands *atomic.Int64
+	SucceededCommands *atomic.Int64
+	FailedCommands    *atomic.Int64
+}
 
 // ExecutorConfig contains global configuration for the SSH executor
 type ExecutorConfig struct {
@@ -27,6 +36,9 @@ type ExecutorConfig struct {
 	UseKnownHosts  bool
 	KnownHostsPath string
 	DefaultPort    int
+
+	// Credentials settings
+	CredentialsPath string
 
 	// Execution settings
 	OutputDirectory string
@@ -48,9 +60,39 @@ func DefaultExecutorConfig() *ExecutorConfig {
 		UseKnownHosts:   true,
 		KnownHostsPath:  knownHostsPath,
 		DefaultPort:     22,
+		CredentialsPath: "config/credentials.enc",
 		OutputDirectory: "output",
 		ConcurrentLimit: 10,
 	}
+}
+
+// Validate checks the configuration for invalid values
+func (c *ExecutorConfig) Validate() error {
+	if c.ConcurrentLimit <= 0 {
+		return fmt.Errorf("concurrent limit must be positive, got %d", c.ConcurrentLimit)
+	}
+	if c.ConcurrentLimit > 1000 {
+		return fmt.Errorf("concurrent limit too high (max 1000), got %d", c.ConcurrentLimit)
+	}
+	if c.ConnectTimeout <= 0 {
+		return fmt.Errorf("connect timeout must be positive, got %v", c.ConnectTimeout)
+	}
+	if c.ExecuteTimeout <= 0 {
+		return fmt.Errorf("execute timeout must be positive, got %v", c.ExecuteTimeout)
+	}
+	if c.KeepAliveTime < 0 {
+		return fmt.Errorf("keep alive time cannot be negative, got %v", c.KeepAliveTime)
+	}
+	if c.DefaultPort <= 0 || c.DefaultPort > 65535 {
+		return fmt.Errorf("default port must be between 1 and 65535, got %d", c.DefaultPort)
+	}
+	if c.CredentialsPath == "" {
+		return fmt.Errorf("credentials path cannot be empty")
+	}
+	if c.OutputDirectory == "" {
+		return fmt.Errorf("output directory cannot be empty")
+	}
+	return nil
 }
 
 // Playbook defines a collection of reusable command sequences
@@ -105,13 +147,13 @@ func FindPlaybook(playbookConfig *PlaybookConfig, playbookName string) (*Playboo
 	return nil, fmt.Errorf("playbook %s not found", playbookName)
 }
 
-func GetSSHClient() (*ssh.ClientConfig, error) {
+func GetSSHClient(credentialsPath string) (*ssh.ClientConfig, error) {
 	decryptionPassword := os.Getenv("CREDENTIALS_PASSWORD")
 	if decryptionPassword == "" {
 		return nil, fmt.Errorf("CREDENTIALS_PASSWORD environment variable not set")
 	}
 
-	creds, err := DecryptCredentials(decryptionPassword, "config/credentials.enc")
+	creds, err := DecryptCredentials(decryptionPassword, credentialsPath)
 	if err != nil {
 		return nil, fmt.Errorf("error decrypting credentials: %v", err)
 	}
@@ -193,31 +235,81 @@ func GetSSHClient() (*ssh.ClientConfig, error) {
 	return config, nil
 }
 
-func ExecuteCommands(host string, config *ssh.ClientConfig, commands []string) error {
-	// Create a context with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
+// executeWithRetry executes a function with exponential backoff retry logic
+func executeWithRetry(ctx context.Context, maxRetries int, operation func() error) error {
+	var lastErr error
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		// Check if context is cancelled before attempting
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 
-	// Create a dial context for the SSH connection
-	dialer := &net.Dialer{
-		Timeout:   30 * time.Second,
-		KeepAlive: 30 * time.Second,
+		// Execute the operation
+		if err := operation(); err != nil {
+			lastErr = err
+
+			// Don't retry if this was the last attempt
+			if attempt == maxRetries-1 {
+				return fmt.Errorf("failed after %d attempts: %w", maxRetries, lastErr)
+			}
+
+			// Calculate exponential backoff: 2^attempt seconds (max 30 seconds)
+			backoffSeconds := math.Pow(2, float64(attempt))
+			if backoffSeconds > 30 {
+				backoffSeconds = 30
+			}
+			waitDuration := time.Duration(backoffSeconds) * time.Second
+
+			log.Printf("Attempt %d failed, retrying in %v: %v", attempt+1, waitDuration, err)
+
+			// Wait with context awareness
+			select {
+			case <-time.After(waitDuration):
+				continue
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+
+		// Success
+		return nil
 	}
+	return lastErr
+}
 
-	// Connect using context-aware dialer
-	netConn, err := dialer.DialContext(ctx, "tcp", fmt.Sprintf("%s:22", host))
+func ExecuteCommands(ctx context.Context, host string, config *ssh.ClientConfig, commands []string, tracker *ProgressTracker) error {
+	var conn *ssh.Client
+
+	// Connect with retry logic (max 3 attempts)
+	err := executeWithRetry(ctx, 3, func() error {
+		// Create a dial context for the SSH connection
+		dialer := &net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}
+
+		// Connect using context-aware dialer
+		netConn, err := dialer.DialContext(ctx, "tcp", fmt.Sprintf("%s:22", host))
+		if err != nil {
+			return fmt.Errorf("failed to dial %s: %v", host, err)
+		}
+
+		// Create SSH connection from net.Conn
+		clientConn, chans, reqs, err := ssh.NewClientConn(netConn, host, config)
+		if err != nil {
+			netConn.Close()
+			return fmt.Errorf("failed to create SSH client connection for %s: %v", host, err)
+		}
+
+		conn = ssh.NewClient(clientConn, chans, reqs)
+		return nil
+	})
+
 	if err != nil {
-		return fmt.Errorf("failed to dial %s: %v", host, err)
+		return err
 	}
-
-	// Create SSH connection from net.Conn
-	clientConn, chans, reqs, err := ssh.NewClientConn(netConn, host, config)
-	if err != nil {
-		netConn.Close()
-		return fmt.Errorf("failed to create SSH client connection for %s: %v", host, err)
-	}
-
-	conn := ssh.NewClient(clientConn, chans, reqs)
 	defer func(conn *ssh.Client) {
 		err := conn.Close()
 		if err != nil {
@@ -268,8 +360,6 @@ func ExecuteCommands(host string, config *ssh.ClientConfig, commands []string) e
 			log.Printf("Failed to create session for %s: %v", host, err)
 			continue
 		}
-		// Always close the session when done
-		defer session.Close()
 
 		// Create a buffer to store the output
 		var outputBuf bytes.Buffer
@@ -294,6 +384,9 @@ func ExecuteCommands(host string, config *ssh.ClientConfig, commands []string) e
 			execErr = fmt.Errorf("command execution timed out: %v", ctx.Err())
 		}
 
+		// Close the session immediately after command execution
+		session.Close()
+
 		// Combine output
 		output := outputBuf.String()
 		errorOutput := errorBuf.String()
@@ -304,6 +397,20 @@ func ExecuteCommands(host string, config *ssh.ClientConfig, commands []string) e
 
 		if execErr != nil {
 			log.Printf("Failed to execute command '%s' on %s: %v", cmd, host, execErr)
+			// Increment failed command counter if tracker is provided
+			if tracker != nil && tracker.FailedCommands != nil {
+				tracker.FailedCommands.Add(1)
+			}
+		} else {
+			// Increment succeeded command counter if tracker is provided
+			if tracker != nil && tracker.SucceededCommands != nil {
+				tracker.SucceededCommands.Add(1)
+			}
+		}
+
+		// Increment completed command counter if tracker is provided
+		if tracker != nil && tracker.CompletedCommands != nil {
+			tracker.CompletedCommands.Add(1)
 		}
 
 		// Write the output to file

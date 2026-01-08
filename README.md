@@ -115,6 +115,7 @@ export CREDENTIALS_PASSWORD="your-secure-password"
 
 - `-playbooks`: Path to playbooks YAML file (default: "config/playbooks.yaml")
 - `-hosts`: Path to hosts YAML file (default: "config/hosts.yaml")
+- `-credentials`: Path to encrypted credentials file (default: "config/credentials.enc")
 - `-output`: Output directory for command results (default: "output")
 - `-concurrency`: Maximum number of concurrent SSH connections (default: 10)
 - `-timeout`: Global execution timeout (default: 5m)

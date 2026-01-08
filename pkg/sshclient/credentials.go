@@ -3,15 +3,18 @@ package sshclient
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"os"
 	"strings"
+
+	"golang.org/x/crypto/pbkdf2"
 )
 
-// DecryptCredentials decrypts the encrypted credentials using AES-256 in Go
+// DecryptCredentials decrypts the encrypted credentials using AES-256-GCM
+// The password is derived using PBKDF2 with a salt extracted from the ciphertext
 func DecryptCredentials(password, filePath string) (map[string]string, error) {
-	key := []byte(password) // The password used for encryption (must be 32 bytes)
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read encrypted credentials file: %v", err)
@@ -23,23 +26,39 @@ func DecryptCredentials(password, filePath string) (map[string]string, error) {
 		return nil, fmt.Errorf("failed to decode ciphertext: %v", err)
 	}
 
+	// Extract salt (first 16 bytes), nonce (next 12 bytes), and encrypted data
+	// Minimum size: 16 (salt) + 12 (nonce) + 16 (auth tag) = 44 bytes
+	if len(ciphertext) < 44 {
+		return nil, fmt.Errorf("ciphertext too short (must be at least 44 bytes for salt+nonce+tag)")
+	}
+
+	salt := ciphertext[:16]
+	nonce := ciphertext[16:28]
+	encryptedData := ciphertext[28:]
+
+	// Derive a 32-byte key from the password using PBKDF2
+	key := pbkdf2.Key([]byte(password), salt, 100000, 32, sha256.New)
+
+	// Create the AES cipher block
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cipher block: %v", err)
 	}
 
-	if len(ciphertext) < aes.BlockSize {
-		return nil, fmt.Errorf("ciphertext too short")
+	// Create GCM mode for authenticated decryption
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create GCM: %v", err)
 	}
-	iv := ciphertext[:aes.BlockSize]
-	ciphertext = ciphertext[aes.BlockSize:]
 
-	stream := cipher.NewCFBDecrypter(block, iv)
-	stream.XORKeyStream(ciphertext, ciphertext)
+	// Decrypt and verify authentication tag
+	plaintext, err := gcm.Open(nil, nonce, encryptedData, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decrypt credentials (wrong password or corrupted data): %v", err)
+	}
 
 	// Convert the decrypted data into a string (assuming it's key=value pairs)
-	plaintext := string(ciphertext)
-	return parseCredentials(plaintext)
+	return parseCredentials(string(plaintext))
 }
 
 // parseCredentials parses the decrypted credentials into a map

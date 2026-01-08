@@ -4,51 +4,66 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
+
+	"golang.org/x/crypto/pbkdf2"
 )
 
 func encryptCredentials(password []byte, inputPath, outputPath string) error {
-	// Ensure password is exactly 32 bytes (AES-256)
-	if len(password) != 32 {
-		var keyBytes [32]byte
-		copy(keyBytes[:], password)
-		password = keyBytes[:]
-	}
-
 	// Read the input file
-	plaintext, err := ioutil.ReadFile(inputPath)
+	plaintext, err := os.ReadFile(inputPath)
 	if err != nil {
 		return fmt.Errorf("failed to read input file: %v", err)
 	}
 
+	// Generate a random 16-byte salt
+	salt := make([]byte, 16)
+	if _, err := io.ReadFull(rand.Reader, salt); err != nil {
+		return fmt.Errorf("failed to generate salt: %v", err)
+	}
+
+	// Derive a 32-byte key from the password using PBKDF2
+	key := pbkdf2.Key(password, salt, 100000, 32, sha256.New)
+
 	// Create the AES cipher block
-	block, err := aes.NewCipher(password)
+	block, err := aes.NewCipher(key)
 	if err != nil {
 		return fmt.Errorf("failed to create cipher block: %v", err)
 	}
 
-	// Create a random IV
-	ciphertext := make([]byte, aes.BlockSize+len(plaintext))
-	iv := ciphertext[:aes.BlockSize]
-	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
-		return fmt.Errorf("failed to generate IV: %v", err)
+	// Create GCM mode (Galois/Counter Mode) for authenticated encryption
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return fmt.Errorf("failed to create GCM: %v", err)
 	}
 
-	// Encrypt the plaintext
-	stream := cipher.NewCFBEncrypter(block, iv)
-	stream.XORKeyStream(ciphertext[aes.BlockSize:], plaintext)
+	// Generate a random nonce (GCM standard nonce size is 12 bytes)
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return fmt.Errorf("failed to generate nonce: %v", err)
+	}
+
+	// Encrypt and authenticate the plaintext
+	// GCM automatically appends authentication tag to the ciphertext
+	encryptedData := gcm.Seal(nil, nonce, plaintext, nil)
+
+	// Create final format: salt (16) + nonce (12) + encrypted data + auth tag (16, included in encryptedData)
+	ciphertext := make([]byte, 16+len(nonce)+len(encryptedData))
+	copy(ciphertext[:16], salt)
+	copy(ciphertext[16:16+len(nonce)], nonce)
+	copy(ciphertext[16+len(nonce):], encryptedData)
 
 	// Convert the ciphertext to hex for easier storage
 	hexEncoded := hex.EncodeToString(ciphertext)
 
 	// Write the hex-encoded ciphertext to the output file
-	if err := ioutil.WriteFile(outputPath, []byte(hexEncoded), 0600); err != nil {
+	if err := os.WriteFile(outputPath, []byte(hexEncoded), 0600); err != nil {
 		return fmt.Errorf("failed to write output file: %v", err)
 	}
 
